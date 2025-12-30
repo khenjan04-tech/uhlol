@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JD's Owner Dashboard</title>
+
+<style>
+*{box-sizing:border-box;font-family:Inter,Arial,sans-serif;margin:0;padding:0;}
+body{background:#f2f4f7;}
+header{background:#d70f64;color:#fff;padding:16px;font-size:20px;}
+.container{padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.card{background:#fff;padding:16px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.06);}
+.order{border:1px solid #eee;padding:12px;border-radius:10px;margin-bottom:10px;}
+.row{display:flex;justify-content:space-between;margin-top:6px;align-items:center;}
+button{padding:6px 12px;border:none;border-radius:8px;font-weight:600;cursor:pointer;}
+.ready{background:#2563eb;color:#fff;}
+.done{background:#16a34a;color:#fff;}
+.cancel{background:#dc2626;color:#fff;}
+.in{background:#16a34a;color:#fff;}
+.out{background:#dc2626;color:#fff;}
+.suggestion{border-bottom:1px solid #eee;padding:8px 0;}
+@media(max-width:768px){.container{grid-template-columns:1fr;}}
+h3,h4{margin-bottom:8px;}
+</style>
+</head>
+
+<body>
+
+<header>JD's Siomai House – Owner</header>
+
+<audio id="notify">
+  <source src="https://assets.mixkit.co/sfx/preview/mixkit-bell-notification-933.mp3">
+</audio>
+
+<div class="container">
+
+  <!-- ORDERS -->
+  <div class="card">
+    <h3>Today's Orders</h3>
+    <div id="orders"></div>
+  </div>
+
+  <!-- SALES / STOCK / SUGGESTIONS -->
+  <div>
+
+    <div class="card">
+      <h4>Sales</h4>
+      <strong id="todayTotal">₱0</strong> Today<br>
+      <strong id="monthTotal">₱0</strong> This Month<br><br>
+
+      <button onclick="downloadSales('today')">Today CSV</button>
+      <button onclick="downloadSales('month')">Month CSV</button><br><br>
+
+      <!-- SINGLE RESET BUTTON -->
+      <button style="background:#dc2626;color:#fff;" onclick="resetSales()">
+        Reset Today Sales
+      </button>
+    </div>
+
+    <div class="card">
+      <h4>Stock</h4>
+      <div id="stocks"></div>
+    </div>
+
+    <div class="card">
+      <h4>Customer Suggestions</h4>
+      <div id="suggestions"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const ordersDiv = document.getElementById('orders');
+const stocksDiv = document.getElementById('stocks');
+const suggestionsDiv = document.getElementById('suggestions');
+const notify = document.getElementById('notify');
+
+/* ===== INITIAL PRODUCTS ===== */
+if(!localStorage.getItem('products')){
+  localStorage.setItem('products', JSON.stringify([
+    {id:1,name:'Big Siomai',price:10,pcs:1,available:true},
+    {id:2,name:'Big Japanese Siomai',price:13,pcs:1,available:true},
+    {id:3,name:'Gulaman',price:10,pcs:1,available:true},
+    {id:4,name:'Fishball',price:5,pcs:6,available:true},
+    {id:5,name:'Kikiam',price:5,pcs:3,available:true}
+  ]));
+}
+
+/* ===== HELPERS ===== */
+function getOrders(){ return JSON.parse(localStorage.getItem('orders')) || []; }
+function saveOrders(o){ localStorage.setItem('orders', JSON.stringify(o)); }
+
+/* ===== ORDERS RENDER ===== */
+let lastOrderCount = getOrders().length;
+
+function renderOrders(){
+  const today = new Date().toLocaleDateString();
+  const now = new Date();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+
+  const orders = getOrders();
+
+  if(orders.length > lastOrderCount){
+    notify.play();
+    lastOrderCount = orders.length;
+  }
+
+  const todayOrders = orders.filter(o => o.date === today);
+
+  const todayTotal = todayOrders
+    .filter(o => o.status === 'done')
+    .reduce((s,o)=>s + Number(o.total),0);
+
+  const monthTotal = orders
+    .filter(o=>{
+      const d = new Date(o.date);
+      return o.status === 'done' &&
+             d.getMonth() === month &&
+             d.getFullYear() === year;
+    })
+    .reduce((s,o)=>s + Number(o.total),0);
+
+  document.getElementById('todayTotal').innerText = `₱${todayTotal}`;
+  document.getElementById('monthTotal').innerText = `₱${monthTotal}`;
+
+  ordersDiv.innerHTML = '';
+  todayOrders.forEach(o=>{
+    ordersDiv.innerHTML += `
+      <div class="order">
+        <strong>${o.customer}</strong> - ${o.time} - <strong>${o.status}</strong>
+        ${o.items.map(i=>`
+          <div class="row">
+            <span>${i.name} x${i.qty}</span>
+            <span>₱${i.price*i.qty}</span>
+          </div>`).join('')}
+        <div class="row">
+          ${o.status==='preparing'?`<button class="ready" onclick="updateOrder(${o.id},'ready')">READY</button>`:''}
+          ${o.status==='ready'?`<button class="done" onclick="updateOrder(${o.id},'done')">DONE</button>`:''}
+          ${o.status!=='done' && o.status!=='cancelled'?`<button class="cancel" onclick="cancelOrder(${o.id})">CANCEL</button>`:''}
+        </div>
+      </div>`;
+  });
+}
+
+function updateOrder(id,status){
+  saveOrders(getOrders().map(o=>o.id===id?{...o,status}:o));
+  renderOrders();
+}
+
+function cancelOrder(id){
+  saveOrders(getOrders().map(o=>o.id===id?{...o,status:'cancelled'}:o));
+  renderOrders();
+}
+
+/* ===== RESET TODAY ONLY ===== */
+function resetSales(){
+  if(!confirm("Reset TODAY sales only?")) return;
+
+  const today = new Date().toLocaleDateString();
+  const remaining = getOrders().filter(o => o.date !== today);
+
+  saveOrders(remaining);
+  renderOrders();
+  alert("Today's sales reset successfully!");
+}
+
+/* ===== STOCK ===== */
+function renderStocks(){
+  const products = JSON.parse(localStorage.getItem('products'));
+  stocksDiv.innerHTML='';
+  products.forEach(p=>{
+    stocksDiv.innerHTML += `
+      <div class="row">
+        <span>${p.name}</span>
+        <button class="${p.available?'in':'out'}" onclick="toggleStock(${p.id})">
+          ${p.available?'IN':'OUT'}
+        </button>
+      </div>`;
+  });
+}
+
+function toggleStock(id){
+  const products = JSON.parse(localStorage.getItem('products'))
+    .map(p=>p.id===id?{...p,available:!p.available}:p);
+  localStorage.setItem('products', JSON.stringify(products));
+  renderStocks();
+}
+
+/* ===== CSV ===== */
+function downloadSales(type){
+  const now = new Date();
+  const orders = getOrders().filter(o=>o.status==='done');
+  let csv = "Date,Customer,Total\n";
+
+  if(type==='today'){
+    const today = now.toLocaleDateString();
+    orders.filter(o=>o.date===today)
+      .forEach(o=>csv+=`${o.date},${o.customer},${o.total}\n`);
+  }
+
+  if(type==='month'){
+    const m = now.getMonth(), y = now.getFullYear();
+    orders.filter(o=>{
+      const d = new Date(o.date);
+      return d.getMonth()===m && d.getFullYear()===y;
+    }).forEach(o=>csv+=`${o.date},${o.customer},${o.total}\n`);
+  }
+
+  const blob = new Blob([csv],{type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = type+"_sales.csv";
+  a.click();
+}
+
+/* ===== SUGGESTIONS ===== */
+function renderSuggestions(){
+  const s = JSON.parse(localStorage.getItem('suggestions'))||[];
+  suggestionsDiv.innerHTML='';
+  s.forEach(x=>{
+    suggestionsDiv.innerHTML += `
+      <div class="suggestion">
+        <strong>${x.customer}</strong> (${x.date})<br>${x.text}
+      </div>`;
+  });
+}
+
+/* ===== INIT ===== */
+renderOrders();
+renderStocks();
+renderSuggestions();
+
+setInterval(()=>{
+  renderOrders();
+  renderStocks();
+  renderSuggestions();
+},2000);
+</script>
+
+</body>
+</html>

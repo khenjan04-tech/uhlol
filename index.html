@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JD's Siomai House</title>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,Arial,sans-serif;}
+body{
+  background:url('bg.jpg') no-repeat center/cover fixed;
+  min-height:100vh;
+  color:#222;
+}
+body::before{
+  content:'';
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.2);
+  z-index:-1;
+}
+header{
+  background:rgba(215,15,100,.9);
+  color:#fff;
+  padding:16px 20px;
+}
+header h2{font-size:24px;}
+#storeHours{font-size:14px;margin-top:4px;}
+.container{
+  display:grid;
+  grid-template-columns:1fr 340px;
+  gap:16px;
+  padding:16px;
+}
+@media(max-width:900px){.container{grid-template-columns:1fr;}}
+.card{
+  background:#fff;
+  border-radius:16px;
+  padding:16px;
+  box-shadow:0 8px 24px rgba(0,0,0,.15);
+}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:16px;
+}
+.item img{
+  width:100%;
+  height:120px;
+  object-fit:cover;
+  border-radius:12px;
+}
+.item h4{margin:8px 0;}
+.item small{color:#666;}
+.item button{
+  width:100%;
+  padding:10px;
+  margin-top:8px;
+  background:#d70f64;
+  color:#fff;
+  border:none;
+  border-radius:10px;
+  cursor:pointer;
+}
+.item button:disabled{background:#ccc;}
+.row{display:flex;justify-content:space-between;margin:6px 0;}
+.in{color:#4ade80;font-weight:600;}
+.out{color:#f87171;font-weight:600;}
+.toggle button{
+  flex:1;padding:8px;border-radius:8px;border:1px solid #ddd;background:#fff;cursor:pointer;
+}
+.toggle .on{background:#d70f64;color:#fff;}
+input, textarea{
+  width:100%;
+  padding:8px;
+  margin-top:8px;
+  border-radius:8px;
+  border:1px solid #ddd;
+}
+textarea{resize:none;height:70px;}
+.cancelBtn{
+  width:100%;margin-top:6px;background:#dc2626;color:#fff;border:none;
+  padding:8px;border-radius:8px;cursor:pointer;
+}
+.order-item{
+  border-bottom:1px solid #eee;padding:8px 0;font-size:14px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h2><strong>JD's</strong> Siomai House</h2>
+  <div id="storeHours"></div>
+</header>
+
+<div class="container">
+
+<main class="card">
+  <h3>Menu</h3>
+  <div class="grid" id="grid"></div>
+</main>
+
+<aside class="card">
+  <h3>Your Cart</h3>
+
+  <div class="row toggle">
+    <button class="on" onclick="setMode('pickup')">Pickup</button>
+    <button onclick="setMode('delivery')">Delivery (+₱10)</button>
+  </div>
+
+  <div id="cart"></div>
+
+  <input id="customerName" placeholder="Your Name (required)">
+  <input id="customerAddress" placeholder="Delivery Address" style="display:none">
+
+  <div class="row">
+    <strong>Total</strong>
+    <strong id="total">₱0</strong>
+  </div>
+
+  <button onclick="checkout()" style="width:100%;padding:12px;background:#d70f64;color:#fff;border:none;border-radius:10px">
+    Place Order
+  </button>
+
+  <button class="cancelBtn" onclick="cancelCart()">Cancel Cart</button>
+
+  <hr style="margin:12px 0">
+
+  <h4>Your Orders</h4>
+  <div id="myOrders"></div>
+
+  <hr style="margin:12px 0">
+
+  <!-- ✅ SUGGESTION SECTION -->
+  <h4>Suggestion</h4>
+  <textarea id="suggestionText" placeholder="Your suggestion..."></textarea>
+  <button onclick="sendSuggestion()" style="margin-top:8px;width:100%;background:#2563eb;color:#fff;border:none;padding:10px;border-radius:10px">
+    Send Suggestion
+  </button>
+
+</aside>
+
+</div>
+
+<script>
+// ===== PRODUCTS =====
+if(!localStorage.getItem('products')){
+  localStorage.setItem('products',JSON.stringify([
+    {id:1,name:'Big Siomai',price:10,pcs:1,available:true,img:'https://i.pinimg.com/736x/c6/a4/f0/c6a4f0877889198fddc9b38ae5b40af1.jpg'},
+    {id:2,name:'Big Japanese Siomai',price:13,pcs:1,available:true,img:'https://i.pinimg.com/736x/be/b3/c2/beb3c2fc23973e265687c30e2ca02dcf.jpg'},
+    {id:3,name:'Gulaman',price:10,pcs:1,available:true,img:'https://i.pinimg.com/1200x/4e/89/f2/4e89f2c148319c0e6e3e6f37fc92643a.jpg'},
+    {id:4,name:'Fishball',price:5,pcs:6,available:true,img:'https://i.pinimg.com/1200x/67/d6/73/67d6737b6602c1f1eca75846871474e6.jpg'},
+    {id:5,name:'Kikiam',price:5,pcs:3,available:true,img:'https://i.pinimg.com/1200x/1c/69/1b/1c691b5ece0b9338ce3cb32b7ae73523.jpg'}
+  ]));
+}
+
+let cart=[], mode='pickup';
+const grid=document.getElementById('grid');
+const cartDiv=document.getElementById('cart');
+const myOrdersDiv=document.getElementById('myOrders');
+const address=document.getElementById('customerAddress');
+
+// ===== STORE HOURS =====
+function updateStoreHours(){
+  document.getElementById('storeHours').innerText =
+    mode==='pickup'
+    ? 'Pickup: Mon–Sat 4PM–9PM | Sun 10AM–9PM'
+    : 'Delivery: Mon–Sat 9AM–11AM | Sun 1PM–6PM';
+}
+
+// ===== RENDER PRODUCTS =====
+function renderProducts(){
+  const products=JSON.parse(localStorage.getItem('products'));
+  grid.innerHTML='';
+  products.forEach(p=>{
+    grid.innerHTML+=`
+      <div class="item">
+        <img src="${p.img}">
+        <h4>${p.name} (${p.pcs} pcs)</h4>
+        <small>₱${p.price}</small>
+        <div class="row"><span class="${p.available?'in':'out'}">${p.available?'In Stock':'Out of Stock'}</span></div>
+        <button ${!p.available?'disabled':''} onclick="addToCart(${p.id})">Add</button>
+      </div>`;
+  });
+}
+
+// ===== CART =====
+function addToCart(id){
+  const products=JSON.parse(localStorage.getItem('products'));
+  const p=products.find(x=>x.id===id);
+  const item=cart.find(x=>x.id===id);
+  item?item.qty++:cart.push({...p,qty:1});
+  renderCart();
+}
+
+function renderCart(){
+  cartDiv.innerHTML='';
+  let total=0;
+  cart.forEach(c=>{
+    total+=c.price*c.qty;
+    cartDiv.innerHTML+=`<div class="row">${c.name} x${c.qty}<strong>₱${c.price*c.qty}</strong></div>`;
+  });
+  if(mode==='delivery') total+=10;
+  document.getElementById('total').innerText='₱'+total;
+}
+
+function setMode(m){
+  mode=m;
+  address.style.display=m==='delivery'?'block':'none';
+  updateStoreHours();
+  renderCart();
+}
+
+// ===== CHECKOUT =====
+function checkout(){
+  const name=document.getElementById('customerName').value.trim();
+  if(!name||!cart.length) return alert('Complete your order');
+  const orders=JSON.parse(localStorage.getItem('orders'))||[];
+  const now=new Date();
+  orders.push({
+    id:Date.now(),customer:name,items:cart,
+    total:document.getElementById('total').innerText.replace('₱',''),
+    status:'preparing',date:now.toLocaleDateString(),time:now.toLocaleTimeString()
+  });
+  localStorage.setItem('orders',JSON.stringify(orders));
+  cart=[]; renderCart(); renderOrders();
+}
+
+// ===== ORDERS =====
+function renderOrders(){
+  const name=document.getElementById('customerName').value.trim();
+  const orders=JSON.parse(localStorage.getItem('orders'))||[];
+  myOrdersDiv.innerHTML='';
+  orders.filter(o=>o.customer===name).forEach(o=>{
+    myOrdersDiv.innerHTML+=`
+      <div class="order-item">
+        <strong>${o.date} ${o.time}</strong> – ${o.status}<br>
+        ${o.items.map(i=>`${i.name} x${i.qty}`).join(', ')}<br>
+        Total: ₱${o.total}
+      </div>`;
+  });
+}
+
+// ===== SUGGESTION SAVE =====
+function sendSuggestion(){
+  const name=document.getElementById('customerName').value.trim();
+  const text=document.getElementById('suggestionText').value.trim();
+  if(!name||!text) return alert('Name and suggestion required');
+  const s=JSON.parse(localStorage.getItem('suggestions'))||[];
+  s.push({customer:name,text,date:new Date().toLocaleString()});
+  localStorage.setItem('suggestions',JSON.stringify(s));
+  document.getElementById('suggestionText').value='';
+  alert('Thank you for your suggestion!');
+}
+
+// ===== INIT =====
+renderProducts();
+renderCart();
+renderOrders();
+updateStoreHours();
+setInterval(renderOrders,2000);
+</script>
+
+</body>
+</html>
